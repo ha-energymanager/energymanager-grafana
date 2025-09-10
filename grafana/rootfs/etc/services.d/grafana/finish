@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bash
+# Give s6 a moment before exit; harmless placeholder
+sleep 1
