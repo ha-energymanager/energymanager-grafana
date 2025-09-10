@@ -1,0 +1,12 @@
+#!/usr/bin/with-contenv bash
+set -euo pipefail
+
+# Ensure ownership
+chown -R 472:472 /data || true
+
+# Start Grafana (as grafana user)
+exec s6-setuidgid 472 grafana-server \
+--homepath=/usr/share/grafana \
+--config=/etc/grafana/grafana.ini \
+--packaging=addon \
+--pidfile=/run/grafana.pid
