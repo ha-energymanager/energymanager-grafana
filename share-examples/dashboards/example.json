@@ -1,0 +1,21 @@
+{
+"__inputs": [],
+"__requires": [
+{ "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.x" }
+],
+"title": "Energy Manager – Example",
+"uid": "em-example",
+"timezone": "",
+"schemaVersion": 37,
+"version": 1,
+"time": { "from": "now-6h", "to": "now" },
+"panels": [
+{
+"type": "stat",
+"title": "Example Stat",
+"id": 1,
+"datasource": null,
+"options": { "reduceOptions": { "calcs": ["last"], "fields": "" } }
+}
+]
+}
