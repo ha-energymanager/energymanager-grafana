@@ -1,0 +1,12 @@
+apiVersion: 1
+providers:
+- name: 'EnergyManager Dashboards'
+orgId: 1
+folder: 'Energy Manager'
+type: file
+disableDeletion: true
+editable: false
+options:
+path: /share/energymanager/grafana/dashboards
+# Load any *.json in that folder (non-recursive)
+# You can add subfolders by creating additional providers if needed.
