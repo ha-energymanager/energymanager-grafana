@@ -1,0 +1,11 @@
+#!/usr/bin/with-contenv bash
+set -euo pipefail
+
+mkdir -p /data/grafana \
+/data/logs \
+/data/plugins \
+/share/energymanager/grafana/dashboards \
+/share/energymanager/grafana/datasources
+
+# Ensure ownership for grafana (uid/gid 472 is the default grafana user in Alpine)
+chown -R 472:472 /data /share/energymanager/grafana || true
