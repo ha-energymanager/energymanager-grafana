@@ -1,48 +1,39 @@
 #!/usr/bin/with-contenv bash
 set -euo pipefail
 
-# Read options from add-on config
-ADMIN_USER="$(bashio::config 'admin_user')"
-ADMIN_PASSWORD="$(bashio::config 'admin_password')"
-ALLOW_ANON=$(bashio::config 'allow_anonymous')
+OPTS=/data/options.json
+ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
+ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
+ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Extra env (GF_*)
-if bashio::config.has_value 'env'; then
-for key in $(bashio::config 'env|keys'); do
-val=$(bashio::config "env[${key}]")
-export "${key}=${val}"
-done
-fi
-
-# Configure core Grafana env locations
+# Core Grafana paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Ingress configuration
+# Ingress
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s/api/hassio_ingress/"
 
-# Auth: admin user/pass
-export GF_SECURITY_ADMIN_USER="${ADMIN_USER}"
-export GF_SECURITY_ADMIN_PASSWORD="${ADMIN_PASSWORD}"
+# Auth
+export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
+export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
-# Anonymous auth optional
-if [ "${ALLOW_ANON}" = "true" ]; then
-export GF_AUTH_ANONYMOUS_ENABLED=true
-export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+if [ "$ALLOW_ANON" = "true" ]; then
+  export GF_AUTH_ANONYMOUS_ENABLED=true
+  export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
 else
-export GF_AUTH_ANONYMOUS_ENABLED=false
+  export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Install optional plugins
-if bashio::config.has_value 'plugins'; then
-for plug in $(bashio::config 'plugins[]'); do
-echo "Installing plugin: ${plug}"
-grafana-cli --pluginsDir "/data/plugins" plugins install "${plug}" || true
-done
+# Optional plugins
+if jq -e '.plugins | length > 0' "$OPTS" >/dev/null 2>&1; then
+  while IFS= read -r plug; do
+    echo "Installing plugin: $plug"
+    grafana-cli --pluginsDir "/data/plugins" plugins install "$plug" || true
+  done < <(jq -r '.plugins[]' "$OPTS")
 fi
 
-# Prepare provisioning (datasources from /share, dashboards via static yaml)
+# Copy datasource YAMLs; dashboards are read in-place from /share
 /usr/local/bin/prepare-provisioning
