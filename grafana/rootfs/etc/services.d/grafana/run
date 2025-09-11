@@ -1,12 +1,18 @@
 #!/usr/bin/with-contenv bash
 set -euo pipefail
 
-# Ensure ownership
-chown -R 472:472 /data || true
-
-# Start Grafana (as grafana user)
-exec s6-setuidgid 472 grafana-server \
---homepath=/usr/share/grafana \
---config=/etc/grafana/grafana.ini \
---packaging=addon \
---pidfile=/run/grafana.pid
+if getent passwd grafana >/dev/null 2>&1; then
+  chown -R grafana:grafana /data || true
+  exec s6-setuidgid grafana grafana-server \
+    --homepath=/usr/share/grafana \
+    --config=/etc/grafana/grafana.ini \
+    --packaging=addon \
+    --pidfile=/run/grafana.pid
+else
+  # Fallback: run as root (shouldn't happen after Dockerfile fix)
+  exec grafana-server \
+    --homepath=/usr/share/grafana \
+    --config=/etc/grafana/grafana.ini \
+    --packaging=addon \
+    --pidfile=/run/grafana.pid
+fi
