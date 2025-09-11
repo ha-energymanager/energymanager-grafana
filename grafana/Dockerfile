@@ -1,10 +1,10 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Alpine packages only (no 'bashio' here)
-RUN apk add --no-cache grafana bash jq
+# Alpine packages only
+RUN apk add --no-cache grafana bash jq curl
 
-# Ensure grafana user exists & writable data dirs
+# Ensure grafana user & writable dirs
 RUN adduser -D -H -u 472 -s /sbin/nologin grafana || true \
  && mkdir -p /data/grafana /data/logs /data/plugins \
  && chown -R grafana:grafana /data
