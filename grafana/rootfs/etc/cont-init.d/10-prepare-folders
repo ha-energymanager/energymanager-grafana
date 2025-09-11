@@ -2,10 +2,13 @@
 set -euo pipefail
 
 mkdir -p /data/grafana \
-/data/logs \
-/data/plugins \
-/share/energymanager/grafana/dashboards \
-/share/energymanager/grafana/datasources
+         /data/logs \
+         /data/plugins \
+         /share/energymanager/grafana/dashboards \
+         /share/energymanager/grafana/datasources
 
-# Ensure ownership for grafana (uid/gid 472 is the default grafana user in Alpine)
-chown -R 472:472 /data /share/energymanager/grafana || true
+if getent passwd grafana >/dev/null 2>&1; then
+  chown -R grafana:grafana /data /share/energymanager/grafana || true
+else
+  chown -R 472:472 /data /share/energymanager/grafana || true
+fi
