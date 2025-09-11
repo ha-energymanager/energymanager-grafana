@@ -1,7 +1,7 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache grafana bash jq
+RUN apk add --no-cache grafana bash jq bashio
 
 RUN adduser -D -H -u 472 -s /sbin/nologin grafana || true
 
