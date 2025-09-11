@@ -54,3 +54,4 @@ else
     --config=/etc/grafana/grafana.ini \
     --packaging=addon
 fi
+
