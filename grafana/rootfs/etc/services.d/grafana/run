@@ -6,25 +6,24 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Ask Supervisor about published ports (no bashio)
+# Ask Supervisor for our add-on info (no bashio needed)
 ADDON_INFO_JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
-DIRECT_PORT="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ports["3000/tcp"] // empty')"
+INGRESS_ENTRY="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ingress_entry // empty')"   # e.g. /hassio/ingress/5dcfe9b4_energymanager_grafana
 
-# === Key bit ===
-# If a host port is mapped, allow direct access on "/".
-# Otherwise, DO NOT set root_url; Grafana will honor X-Forwarded-Prefix from HA Ingress.
+# If a host port is published, root at "/" (direct access). Otherwise, set a path-only root URL.
+DIRECT_PORT="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ports["3000/tcp"] // empty')"
 if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
   export GF_SERVER_ROOT_URL="/"
 else
-  unset GF_SERVER_ROOT_URL || true
+  ENTRY="${INGRESS_ENTRY%/}/"
+  # Use Grafana's templated host so it works for any IP/hostname without hardcoding
+  export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s${ENTRY}"
 fi
 
-# Required for HA Ingress/sub-path operation
+# Required for HA Ingress/sub-path
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
-
-# Avoid cookie collisions (optional but helpful)
 export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
 
 # Writable paths
@@ -36,8 +35,6 @@ export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 # Admin creds
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
-
-# Anonymous access
 if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
@@ -45,7 +42,7 @@ else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Ownership & start
+# Start
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
