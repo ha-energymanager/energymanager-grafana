@@ -6,28 +6,35 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Query Supervisor for our own add-on info
+# Query Supervisor for our add-on info
 INFO="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
-INGRESS_URL="$(echo "$INFO" | jq -r '.data.ingress_url // empty')"      # full, absolute URL incl. token
-DIRECT_PORT="$(echo "$INFO" | jq -r '.data.ports["3000/tcp"] // empty')" # published host port (if any)
+INGRESS_ENTRY="$(echo "$INFO" | jq -r '.data.ingress_entry // empty')"   # e.g. /hassio/ingress/<repoid_slug>
+DIRECT_PORT="$(echo "$INFO" | jq -r '.data.ports["3000/tcp"] // empty')"
 
-# Decide Grafana's public URL
-if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
-  # If user exposed 3000 on the host, run as root at "/"
-  export GF_SERVER_ROOT_URL="/"
-else
-  # Ingress-only: use the absolute ingress URL (host + /api/hassio_ingress/<token>/)
-  case "$INGRESS_URL" in
-    */) export GF_SERVER_ROOT_URL="$INGRESS_URL" ;;
-    *)  export GF_SERVER_ROOT_URL="${INGRESS_URL}/" ;;
+# Normalize to a path with a single trailing slash
+if [ -n "$INGRESS_ENTRY" ]; then
+  # ensure it starts with "/"
+  case "$INGRESS_ENTRY" in
+    /*) : ;;
+    *) INGRESS_ENTRY="/$INGRESS_ENTRY" ;;
   esac
+  # ensure single trailing slash
+  INGRESS_ENTRY="${INGRESS_ENTRY%/}/"
 fi
 
-# Required for HA Ingress
+# Decide root_url:
+# - If a host port is published, serve at "/" for direct access
+# - Otherwise, use the slug-based HA ingress entry (path-only, no host)
+if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
+  export GF_SERVER_ROOT_URL="/"
+else
+  export GF_SERVER_ROOT_URL="${INGRESS_ENTRY}"
+fi
+
+# Required for HA Ingress/sub-path
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
-export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
 
 # Writable paths
 export GF_PATHS_DATA=/data/grafana
@@ -35,9 +42,11 @@ export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Admin/anonymous
+# Admin creds
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+
+# Anonymous option
 if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
@@ -45,7 +54,7 @@ else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Ownership & start
+# Start Grafana
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
