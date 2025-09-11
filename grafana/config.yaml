@@ -21,11 +21,9 @@ options:
   admin_password: changeme
   allow_anonymous: false
   plugins: []
-  env: {}
 schema:
   admin_user: str
   admin_password: password
   allow_anonymous: bool
   plugins:
     - str?
-  env: dict?
