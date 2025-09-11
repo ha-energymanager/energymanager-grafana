@@ -14,7 +14,6 @@ export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
 # Ingress
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
-export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s/api/hassio_ingress/"
 
 # Auth
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
