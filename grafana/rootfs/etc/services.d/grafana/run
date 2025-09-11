@@ -6,28 +6,31 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Query Supervisor for our own add-on info
-# Requires SUPERVISOR_TOKEN (provided by HA automatically)
+# Ask Supervisor for our canonical ingress URL (absolute) and entry (path)
 ADDON_INFO_JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
+INGRESS_URL="$(echo "$ADDON_INFO_JSON"   | jq -r '.data.ingress_url   // empty')"
 INGRESS_ENTRY="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ingress_entry // empty')"
-DIRECT_PORT="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ports["3000/tcp"] // empty')"
 
-# Decide the public root URL
-if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
-  # If host port 3000 is published, allow direct access at "/"
-  export GF_SERVER_ROOT_URL="/"
+# Decide the public root URL Grafana should use.
+# Prefer absolute ingress_url. Fallback builds a URL using Grafana's templated vars.
+if [ -n "$INGRESS_URL" ]; then
+  case "$INGRESS_URL" in
+    */) export GF_SERVER_ROOT_URL="$INGRESS_URL" ;;
+    *)  export GF_SERVER_ROOT_URL="${INGRESS_URL}/" ;;
+  esac
 else
-  # Ingress-only: serve from the HA-provided subpath (path-only URL, trailing slash)
-  INGRESS_ENTRY="${INGRESS_ENTRY%/}/"
-  export GF_SERVER_ROOT_URL="${INGRESS_ENTRY}"
+  # Old supervisors may not provide ingress_url. Build from the path.
+  # %(protocol)s/%(domain)s/%(http_port)s are substituted by Grafana at runtime.
+  ENTRY="${INGRESS_ENTRY%/}/"
+  export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s${ENTRY}"
 fi
 
-# Required for HA Ingress & subpath operation
+# Required for subpath/Ingress
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
 
-# Writable paths
+# Persisted paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
@@ -37,7 +40,10 @@ export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
-# Anonymous access
+# Avoid cookie collisions if user also exposes port 3000 directly
+export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
+
+# Anonymous option
 if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
@@ -45,7 +51,7 @@ else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Ensure ownership & start Grafana
+# Ownership & start
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
