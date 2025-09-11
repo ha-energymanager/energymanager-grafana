@@ -1,5 +1,4 @@
-# grafana/rootfs/etc/services.d/grafana/run
-#!/usr/bin/with-contenv bashio
+#!/usr/bin/with-contenv bash
 set -euo pipefail
 
 OPTS=/data/options.json
@@ -7,42 +6,46 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# 1) Build a path-only root URL from HA's Ingress entry
-BASE_PATH="$(bashio::addon.ingress_entry)"    # e.g. /hassio/ingress/<repoid_slug>/
-BASE_PATH="${BASE_PATH%/}/"                   # ensure single trailing slash
+# Query Supervisor for our own add-on info
+# Requires SUPERVISOR_TOKEN (provided by HA automatically)
+ADDON_INFO_JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
+INGRESS_ENTRY="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ingress_entry // empty')"
+DIRECT_PORT="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ports["3000/tcp"] // empty')"
 
-# 2) If user exposed port 3000 on the host, let direct access work too:
-DIRECT_PORT="$(bashio::addon.port 3000/tcp || true)"
-if [[ -n "${DIRECT_PORT:-}" && "${DIRECT_PORT}" != "null" ]]; then
-  # When visiting http://<host>:3000 we want Grafana at "/"
+# Decide the public root URL
+if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
+  # If host port 3000 is published, allow direct access at "/"
   export GF_SERVER_ROOT_URL="/"
 else
-  # Ingress-only: serve from the HA-provided subpath (no host hardcoding)
-  export GF_SERVER_ROOT_URL="${BASE_PATH}"
+  # Ingress-only: serve from the HA-provided subpath (path-only URL, trailing slash)
+  INGRESS_ENTRY="${INGRESS_ENTRY%/}/"
+  export GF_SERVER_ROOT_URL="${INGRESS_ENTRY}"
 fi
 
-# Required for subpath & HA Ingress iframe
+# Required for HA Ingress & subpath operation
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
 
-# Use /data for writable paths
+# Writable paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Auth
+# Admin creds
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
-if [[ "$ALLOW_ANON" == "true" ]]; then
+
+# Anonymous access
+if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
 else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Start Grafana as the grafana user
+# Ensure ownership & start Grafana
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
