@@ -6,25 +6,22 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Ask Supervisor for our add-on info (no bashio)
+# Ask Supervisor for our add-on info
 INFO="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
-INGRESS_ENTRY="$(echo "$INFO" | jq -r '.data.ingress_entry // empty')"   # e.g. /hassio/ingress/<repoid_slug>
-DIRECT_PORT="$(echo "$INFO" | jq -r '.data.ports["3000/tcp"] // empty')" # if host port 3000 is published
+INGRESS_URL="$(echo "$INFO"   | jq -r '.data.ingress_url   // empty')"  # absolute: http(s)://host:8123/api/hassio_ingress/<token>
+INGRESS_ENTRY="$(echo "$INFO" | jq -r '.data.ingress_entry // empty')"  # path:     /hassio/ingress/<repoid_slug>
+DIRECT_PORT="$(echo "$INFO"   | jq -r '.data.ports["3000/tcp"] // empty')"
 
-# Normalize ingress entry to a clean path with exactly one trailing slash
-case "$INGRESS_ENTRY" in
-  /*) : ;;
-  *)  INGRESS_ENTRY="/$INGRESS_ENTRY" ;;
-esac
-INGRESS_ENTRY="${INGRESS_ENTRY%/}/"
-
-# Decide root_url
+# Decide root_url:
+# - If host port 3000 is published, serve at "/"
+# - Otherwise, use the absolute ingress_url (so cookies are scoped to the HA origin)
 if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
-  # Direct host access enabled -> serve at "/"
   export GF_SERVER_ROOT_URL="/"
 else
-  # Ingress only -> serve from the HA slug path (never the token path)
-  export GF_SERVER_ROOT_URL="${INGRESS_ENTRY}"
+  case "$INGRESS_URL" in
+    */) export GF_SERVER_ROOT_URL="$INGRESS_URL" ;;
+    *)  export GF_SERVER_ROOT_URL="${INGRESS_URL}/" ;;
+  esac
 fi
 
 # Required for HA Ingress/sub-path
