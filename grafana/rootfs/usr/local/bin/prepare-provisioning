@@ -4,15 +4,13 @@ set -euo pipefail
 SRC_DS_DIR="/share/energymanager/grafana/datasources"
 DST_DS_DIR="/etc/grafana/provisioning/datasources"
 
-mkdir -p "${DST_DS_DIR}"
+mkdir -p "$DST_DS_DIR"
 
-# Copy all datasource YAMLs into provisioning dir so Grafana auto-loads them
+# Copy all datasource YAMLs; dashboards are read directly from /share by dashboards.yaml
 shopt -s nullglob
-for f in "${SRC_DS_DIR}"/*.y?(y)ml; do
-base=$(basename "$f")
-echo "Provisioning datasource: ${base}"
-cp -f "$f" "${DST_DS_DIR}/${base}"
+for f in "$SRC_DS_DIR"/*.yaml "$SRC_DS_DIR"/*.yml; do
+  base="$(basename "$f")"
+  echo "Provisioning datasource: $base"
+  cp -f "$f" "$DST_DS_DIR/$base"
 done
 shopt -u nullglob
-
-# Nothing to do for dashboards: they are read directly from /share via dashboards.yaml
