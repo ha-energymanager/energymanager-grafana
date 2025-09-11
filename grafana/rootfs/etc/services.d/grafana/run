@@ -6,21 +6,21 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Use /data for writable paths
+# Writable paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Ingress settings
+# Ingress
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s/api/hassio_ingress/"
 
-# Admin creds (first run uses these to bootstrap)
+# Auth
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
-# Anonymous access
+# Anonymous
 if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
@@ -28,19 +28,16 @@ else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Make sure /data is owned by grafana if the user exists
+# Ensure ownership & start
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
     --homepath=/usr/share/grafana \
     --config=/etc/grafana/grafana.ini \
-    --packaging=addon \
-    --pidfile=/run/grafana.pid
+    --packaging=addon
 else
-  # Fallback (shouldn't happen with our Dockerfile user creation)
   exec grafana-server \
     --homepath=/usr/share/grafana \
     --config=/etc/grafana/grafana.ini \
-    --packaging=addon \
-    --pidfile=/run/grafana.pid
+    --packaging=addon
 fi
