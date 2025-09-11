@@ -13,6 +13,8 @@ apparmor: true
 ingress: true
 ingress_entry: /
 ingress_port: 3000
+ports:
+  3000/tcp: 3000
 panel_icon: mdi:chart-line
 map:
   - share:rw
