@@ -1,4 +1,5 @@
-#!/usr/bin/with-contenv bash
+# grafana/rootfs/etc/services.d/grafana/run
+#!/usr/bin/with-contenv bashio
 set -euo pipefail
 
 OPTS=/data/options.json
@@ -6,30 +7,42 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Writable paths
+# 1) Build a path-only root URL from HA's Ingress entry
+BASE_PATH="$(bashio::addon.ingress_entry)"    # e.g. /hassio/ingress/<repoid_slug>/
+BASE_PATH="${BASE_PATH%/}/"                   # ensure single trailing slash
+
+# 2) If user exposed port 3000 on the host, let direct access work too:
+DIRECT_PORT="$(bashio::addon.port 3000/tcp || true)"
+if [[ -n "${DIRECT_PORT:-}" && "${DIRECT_PORT}" != "null" ]]; then
+  # When visiting http://<host>:3000 we want Grafana at "/"
+  export GF_SERVER_ROOT_URL="/"
+else
+  # Ingress-only: serve from the HA-provided subpath (no host hardcoding)
+  export GF_SERVER_ROOT_URL="${BASE_PATH}"
+fi
+
+# Required for subpath & HA Ingress iframe
+export GF_SERVER_SERVE_FROM_SUB_PATH=true
+export GF_SECURITY_ALLOW_EMBEDDING=true
+export GF_SERVER_ENFORCE_DOMAIN=false
+
+# Use /data for writable paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Ingress
-export GF_SERVER_SERVE_FROM_SUB_PATH=true
-export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s/api/hassio_ingress/"
-export GF_SECURITY_ALLOW_EMBEDDING=true
-
 # Auth
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
-
-# Anonymous
-if [ "$ALLOW_ANON" = "true" ]; then
+if [[ "$ALLOW_ANON" == "true" ]]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
 else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# Ensure ownership & start
+# Start Grafana as the grafana user
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
