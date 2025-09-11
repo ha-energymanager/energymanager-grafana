@@ -1,5 +1,5 @@
 name: EnergyManager Grafana
-version: "0.1.10"
+version: "0.1.11"
 slug: energymanager_grafana
 description: Grafana with shared provisioning from /share/energymanager/grafana
 url: https://github.com/ha-energymanager/energymanager-grafana
