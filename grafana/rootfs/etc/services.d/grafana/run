@@ -1,3 +1,4 @@
+# grafana/rootfs/etc/services.d/grafana/run
 #!/usr/bin/with-contenv bash
 set -euo pipefail
 
@@ -6,31 +7,37 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Query Supervisor for our own add-on info
+# Query Supervisor
 INFO="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
 SELF_SLUG="$(echo "$INFO" | jq -r '.data.slug')"                     # e.g. 5dcfe9b4_energymanager_grafana
 DIRECT_PORT="$(echo "$INFO" | jq -r '.data.ports["3000/tcp"] // empty')"
 
-# Decide root_url
+# IMPORTANT: remove any pre-set value so we know what's in effect
+unset GF_SERVER_ROOT_URL || true
+
+# Decide root_url: direct port -> "/", otherwise slug path (never token)
 if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
   export GF_SERVER_ROOT_URL="/"
 else
   export GF_SERVER_ROOT_URL="/hassio/ingress/${SELF_SLUG}/"
 fi
 
-# Required for HA Ingress/sub-path
+# Log exactly what we're exporting (helps verify rebuild actually took)
+echo ">>> EFFECTIVE GF_SERVER_ROOT_URL=${GF_SERVER_ROOT_URL}"
+
+# Ingress/subpath
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
 export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
 
-# Writable paths
+# Paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Admin / anonymous
+# Admin / anon
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 if [ "$ALLOW_ANON" = "true" ]; then
@@ -40,10 +47,7 @@ else
   export GF_AUTH_ANONYMOUS_ENABLED=false
 fi
 
-# (debug) print effective settings once
-echo "GF_SERVER_ROOT_URL=${GF_SERVER_ROOT_URL}"
-
-# Start Grafana
+# Start
 if getent passwd grafana >/dev/null 2>&1; then
   chown -R grafana:grafana /data || true
   exec s6-setuidgid grafana grafana-server \
