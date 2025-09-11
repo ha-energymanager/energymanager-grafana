@@ -1,20 +1,19 @@
-# Multi-arch build support via Home Assistant build system
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Default to Alpine base if BUILD_FROM not provided by HA builder
-# (HA will inject a suitable base for the target arch.)
-
-# Install Grafana and helpers
 RUN apk add --no-cache grafana bash jq
 
-# Copy root filesystem
+RUN adduser -D -H -u 472 -s /sbin/nologin grafana || true
+
+RUN mkdir -p /data/grafana /data/logs /data/plugins \
+ && chown -R grafana:grafana /data
+
 COPY rootfs /
 
-# Permissions
 RUN chmod +x \
-/etc/cont-init.d/* \
-/etc/services.d/grafana/run \
-/usr/local/bin/prepare-provisioning
+    /etc/cont-init.d/* \
+    /etc/services.d/grafana/run \
+    /etc/services.d/grafana/finish \
+    /usr/local/bin/prepare-provisioning
 
 EXPOSE 3000
