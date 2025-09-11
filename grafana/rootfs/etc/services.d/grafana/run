@@ -6,31 +6,28 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Ask Supervisor for our canonical ingress URL (absolute) and entry (path)
+# Ask Supervisor about published ports (no bashio)
 ADDON_INFO_JSON="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
-INGRESS_URL="$(echo "$ADDON_INFO_JSON"   | jq -r '.data.ingress_url   // empty')"
-INGRESS_ENTRY="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ingress_entry // empty')"
+DIRECT_PORT="$(echo "$ADDON_INFO_JSON" | jq -r '.data.ports["3000/tcp"] // empty')"
 
-# Decide the public root URL Grafana should use.
-# Prefer absolute ingress_url. Fallback builds a URL using Grafana's templated vars.
-if [ -n "$INGRESS_URL" ]; then
-  case "$INGRESS_URL" in
-    */) export GF_SERVER_ROOT_URL="$INGRESS_URL" ;;
-    *)  export GF_SERVER_ROOT_URL="${INGRESS_URL}/" ;;
-  esac
+# === Key bit ===
+# If a host port is mapped, allow direct access on "/".
+# Otherwise, DO NOT set root_url; Grafana will honor X-Forwarded-Prefix from HA Ingress.
+if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
+  export GF_SERVER_ROOT_URL="/"
 else
-  # Old supervisors may not provide ingress_url. Build from the path.
-  # %(protocol)s/%(domain)s/%(http_port)s are substituted by Grafana at runtime.
-  ENTRY="${INGRESS_ENTRY%/}/"
-  export GF_SERVER_ROOT_URL="%(protocol)s://%(domain)s:%(http_port)s${ENTRY}"
+  unset GF_SERVER_ROOT_URL || true
 fi
 
-# Required for subpath/Ingress
+# Required for HA Ingress/sub-path operation
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
 
-# Persisted paths
+# Avoid cookie collisions (optional but helpful)
+export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
+
+# Writable paths
 export GF_PATHS_DATA=/data/grafana
 export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
@@ -40,10 +37,7 @@ export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
-# Avoid cookie collisions if user also exposes port 3000 directly
-export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
-
-# Anonymous option
+# Anonymous access
 if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
