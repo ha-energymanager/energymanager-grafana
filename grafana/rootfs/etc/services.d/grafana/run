@@ -6,28 +6,24 @@ ADMIN_USER=$(jq -r '.admin_user' "$OPTS")
 ADMIN_PASSWORD=$(jq -r '.admin_password' "$OPTS")
 ALLOW_ANON=$(jq -r '.allow_anonymous' "$OPTS")
 
-# Query Supervisor for our add-on info
+# Ask Supervisor for our add-on info (no bashio)
 INFO="$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/addons/self/info)"
 INGRESS_ENTRY="$(echo "$INFO" | jq -r '.data.ingress_entry // empty')"   # e.g. /hassio/ingress/<repoid_slug>
-DIRECT_PORT="$(echo "$INFO" | jq -r '.data.ports["3000/tcp"] // empty')"
+DIRECT_PORT="$(echo "$INFO" | jq -r '.data.ports["3000/tcp"] // empty')" # if host port 3000 is published
 
-# Normalize to a path with a single trailing slash
-if [ -n "$INGRESS_ENTRY" ]; then
-  # ensure it starts with "/"
-  case "$INGRESS_ENTRY" in
-    /*) : ;;
-    *) INGRESS_ENTRY="/$INGRESS_ENTRY" ;;
-  esac
-  # ensure single trailing slash
-  INGRESS_ENTRY="${INGRESS_ENTRY%/}/"
-fi
+# Normalize ingress entry to a clean path with exactly one trailing slash
+case "$INGRESS_ENTRY" in
+  /*) : ;;
+  *)  INGRESS_ENTRY="/$INGRESS_ENTRY" ;;
+esac
+INGRESS_ENTRY="${INGRESS_ENTRY%/}/"
 
-# Decide root_url:
-# - If a host port is published, serve at "/" for direct access
-# - Otherwise, use the slug-based HA ingress entry (path-only, no host)
+# Decide root_url
 if [ -n "${DIRECT_PORT}" ] && [ "${DIRECT_PORT}" != "null" ]; then
+  # Direct host access enabled -> serve at "/"
   export GF_SERVER_ROOT_URL="/"
 else
+  # Ingress only -> serve from the HA slug path (never the token path)
   export GF_SERVER_ROOT_URL="${INGRESS_ENTRY}"
 fi
 
@@ -35,6 +31,7 @@ fi
 export GF_SERVER_SERVE_FROM_SUB_PATH=true
 export GF_SECURITY_ALLOW_EMBEDDING=true
 export GF_SERVER_ENFORCE_DOMAIN=false
+export GF_AUTH_LOGIN_COOKIE_NAME=grafana_ingress
 
 # Writable paths
 export GF_PATHS_DATA=/data/grafana
@@ -42,11 +39,9 @@ export GF_PATHS_LOGS=/data/logs
 export GF_PATHS_PLUGINS=/data/plugins
 export GF_PATHS_PROVISIONING=/etc/grafana/provisioning
 
-# Admin creds
+# Admin / anonymous
 export GF_SECURITY_ADMIN_USER="$ADMIN_USER"
 export GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD"
-
-# Anonymous option
 if [ "$ALLOW_ANON" = "true" ]; then
   export GF_AUTH_ANONYMOUS_ENABLED=true
   export GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
